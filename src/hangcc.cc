@@ -5,6 +5,8 @@
 #include <optional>
 #include <vector>
 #include <sstream>
+#include <random>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -15,13 +17,17 @@ const fs::path IMAGES_F  {DATA_DIR / "images.txt"};
 
 // Forward declarations
 std::optional<std::vector<std::string>> read_lines(const std::string& fname);
+std::optional<std::vector<std::string>> parse_words(const std::string& fname);
 std::optional<std::vector<std::string>> parse_images(const std::string& fname);
+void shuffle(std::vector<std::string>& words);
 
 class Gameword
 {
 public:
     void set_word(std::string_view new_word)
     {
+        // TODO: remove
+        std::cerr << "[DEBUG] word = " << new_word << '\n';
         word = new_word;
         guess_word.assign(new_word.size(), '_');
     }
@@ -35,7 +41,12 @@ public:
         }
     }
 
-    bool was_guessed()
+    bool already_guessed(char c)
+    {
+        return guess_word.find(std::toupper(c)) != std::string::npos;
+    }
+
+    bool did_guess_word()
     {
         return word == guess_word;
     }
@@ -62,7 +73,7 @@ int main()
         return 1;
     }
 
-    auto owords = read_lines(WORDS_F);
+    auto owords = parse_words(WORDS_F);
     if (!owords) {
         std::cerr << "Failed to read words from: " << WORDS_F.string() << '\n';
         return 1;
@@ -70,11 +81,21 @@ int main()
 
     auto images = std::move(*oimages);
     auto words = std::move(*owords);
+    size_t curr_word = words.size();
     size_t curr_im = 0;
-    // TODO: Make random word.
     Gameword word;
-    word.set_word(words[0]);
+    std::string input;
+    std::string error_msg;
     do {
+        // Reshuffle word list if needed
+        if (curr_word >= words.size()) {
+            shuffle(words);
+            curr_word = 0;
+        }
+
+        // Get next word
+        word.set_word(words[curr_word++]);
+
         // Print image
         std::cout << images[curr_im] << "\n\n";
 
@@ -95,11 +116,31 @@ int main()
                 std::cout << '\n';
         }
 
-        // Prompt user for a guess
-        std::cout << "\n\nEnter a guess: ";
-        std::cout << std::endl;
+        // Print error message, if any
+        if (error_msg.size() > 0) {
+            std::cout << "\n\n" << error_msg << "\n";
+            error_msg.clear();
+        }
 
-    } while (0);
+        // Prompt user for a guess
+        std::cout << "\nEnter a guess: ";
+        std::getline(std::cin, input);
+        std::cout << "READ: '" << input << "'\n";
+        std::cout << input.size() << '\n';
+
+        if (input.size() != 1 || !std::isalpha(input[0])) {
+            error_msg += "Invalid input!";
+            continue;
+        }
+
+        char guess = input[0];
+        if (word.already_guessed(guess)) {
+            error_msg += "Letter was already guessed!";
+            continue;
+        }
+
+        std::cout << "GUESS: " << guess;
+    } while (true);
 
     return 0;
 }
@@ -119,6 +160,20 @@ std::optional<std::vector<std::string>> read_lines(const std::string& fname)
 
     file.close();
     return lines;
+}
+
+std::optional<std::vector<std::string>> parse_words(const std::string& fname)
+{
+    auto words = read_lines(fname);
+    if (!words.has_value())
+        return words;
+
+    for (auto& word : *words) {
+        for (size_t i = 0; i < word.size(); i++)
+            word[i] = std::toupper(word[i]);
+    }
+
+    return words;
 }
 
 std::optional<std::vector<std::string>> parse_images(const std::string& fname)
@@ -155,4 +210,12 @@ std::optional<std::vector<std::string>> parse_images(const std::string& fname)
     }
 
     return images;
+}
+
+void shuffle(std::vector<std::string>& words)
+{
+     static std::random_device rd;
+     static std::mt19937 g(rd());
+
+     std::shuffle(words.begin(), words.end(), g);
 }
