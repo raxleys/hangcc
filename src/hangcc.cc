@@ -7,6 +7,7 @@
 #include <sstream>
 #include <random>
 #include <algorithm>
+#include <cstdint>
 
 namespace fs = std::filesystem;
 
@@ -32,18 +33,28 @@ public:
         guess_word.assign(new_word.size(), '_');
     }
 
-    void guess(char c)
+    bool guess(char c)
     {
+        c = std::toupper(c);
+        bool correct = false;
+
+        // Update guess_word
         for (size_t i = 0; i < word.size(); ++i) {
             if (word[i] == c) {
                 guess_word[i] = c;
+                correct = true;
             }
         }
+
+        // Update set of guessed words
+        guessed_letters |= (1 << (std::toupper(c) - 'A'));
+
+        return correct;
     }
 
     bool already_guessed(char c)
     {
-        return guess_word.find(std::toupper(c)) != std::string::npos;
+        return guessed_letters & (1 << (std::toupper(c) - 'A'));
     }
 
     bool did_guess_word()
@@ -63,6 +74,7 @@ public:
 
     std::string word{};
     std::string guess_word{};
+    uint32_t guessed_letters{};
 };
 
 int main()
@@ -85,8 +97,9 @@ int main()
     size_t curr_im = 0;
     Gameword word;
     std::string input;
-    std::string error_msg;
-    do {
+    std::string feedback_msg;
+    bool new_game = true;
+    while (true) {
         // Reshuffle word list if needed
         if (curr_word >= words.size()) {
             shuffle(words);
@@ -94,7 +107,10 @@ int main()
         }
 
         // Get next word
-        word.set_word(words[curr_word++]);
+        if (new_game) {
+            word.set_word(words[curr_word++]);
+            new_game = false;
+        }
 
         // Print image
         std::cout << images[curr_im] << "\n\n";
@@ -117,30 +133,38 @@ int main()
         }
 
         // Print error message, if any
-        if (error_msg.size() > 0) {
-            std::cout << "\n\n" << error_msg << "\n";
-            error_msg.clear();
+        if (feedback_msg.size() > 0) {
+            std::cout << "\n\n" << feedback_msg;
+            feedback_msg.clear();
         }
 
         // Prompt user for a guess
-        std::cout << "\nEnter a guess: ";
-        std::getline(std::cin, input);
-        std::cout << "READ: '" << input << "'\n";
-        std::cout << input.size() << '\n';
+        std::cout << "\n\nEnter a guess: ";
+        if (!std::getline(std::cin, input))
+            break;
 
         if (input.size() != 1 || !std::isalpha(input[0])) {
-            error_msg += "Invalid input!";
+            feedback_msg += "Invalid input!";
             continue;
         }
 
         char guess = input[0];
         if (word.already_guessed(guess)) {
-            error_msg += "Letter was already guessed!";
+            feedback_msg += "Letter was already guessed!";
             continue;
         }
 
-        std::cout << "GUESS: " << guess;
-    } while (true);
+        if (word.guess(guess)) {
+            feedback_msg += "Correct!";
+            // TODO: Win condition
+        } else {
+            feedback_msg += "Incorrect!";
+            if (++curr_im >= images.size() - 1) {
+                std::cout << "\nYou lost!\n";
+                break;
+            }
+        }
+    }
 
     return 0;
 }
