@@ -1,3 +1,20 @@
+////////////////////////////////////////////////////////////////////////////
+// hangcc - Terminal based hangman game, written in C++                   //
+// Copyright (C) 2025 Alexander Reyes <raxleys@gmail.com>                 //
+//                                                                        //
+// This program is free software: you can redistribute it and/or modify   //
+// it under the terms of the GNU General Public License as published by   //
+// the Free Software Foundation, either version 3 of the License, or      //
+// (at your option) any later version.                                    //
+//                                                                        //
+// This program is distributed in the hope that it will be useful,        //
+// but WITHOUT ANY WARRANTY; without even the implied warranty of         //
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the          //
+// GNU General Public License for more details.                           //
+//                                                                        //
+// You should have received a copy of the GNU General Public License      //
+// along with this program.  If not, see <https://www.gnu.org/licenses/>. //
+////////////////////////////////////////////////////////////////////////////
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -12,14 +29,20 @@
 namespace fs = std::filesystem;
 
 // Constants
+#define ASCII_RESET "\033[0m"
+#define ASCII_GRAY  "\033[90m"
+#define TERM_CLEAR  "\033[H\033[J"
+
 const fs::path DATA_DIR  {"./data"};
 const fs::path WORDS_F   {DATA_DIR / "words.txt"};
 const fs::path IMAGES_F  {DATA_DIR / "images.txt"};
 
 // Forward declarations
+class Gameword;
 std::optional<std::vector<std::string>> read_lines(const std::string& fname);
 std::optional<std::vector<std::string>> parse_words(const std::string& fname);
 std::optional<std::vector<std::string>> parse_images(const std::string& fname);
+void print_alphabet(const Gameword& word);
 void shuffle(std::vector<std::string>& words);
 
 class Gameword
@@ -27,10 +50,9 @@ class Gameword
 public:
     void set_word(std::string_view new_word)
     {
-        // TODO: remove
-        std::cerr << "[DEBUG] word = " << new_word << '\n';
         word = new_word;
         guess_word.assign(new_word.size(), '_');
+        guessed_letters = 0;
     }
 
     bool guess(char c)
@@ -52,17 +74,17 @@ public:
         return correct;
     }
 
-    bool already_guessed(char c)
+    bool already_guessed(char c) const
     {
         return guessed_letters & (1 << (std::toupper(c) - 'A'));
     }
 
-    bool did_guess_word()
+    bool did_guess_word() const
     {
         return word == guess_word;
     }
 
-    void print_guess(std::ostream& os)
+    void print_guess(std::ostream& os) const
     {
         for (size_t i = 0; i < guess_word.size(); ++i) {
             os << guess_word[i];
@@ -99,7 +121,11 @@ int main()
     std::string input;
     std::string feedback_msg;
     bool new_game = true;
+    bool game_over = false;
     while (true) {
+        // Clear terminal
+        std::cout << TERM_CLEAR;
+
         // Reshuffle word list if needed
         if (curr_word >= words.size()) {
             shuffle(words);
@@ -121,16 +147,7 @@ int main()
         std::cout << '\n';
 
         // Print guessed letters
-        // TODO: ASCII control codes
-        for (char c = 'A'; c <= 'Z'; ++c) {
-            std::cout << c;
-
-            if (c != 'Z' || (c - 'A') % 10 != 0)
-                std::cout << ' ';
-
-            if (c != 'A' && (c - 'A') % 10 == 0)
-                std::cout << '\n';
-        }
+        print_alphabet(word);
 
         // Print error message, if any
         if (feedback_msg.size() > 0) {
@@ -138,10 +155,28 @@ int main()
             feedback_msg.clear();
         }
 
+        // Break out of loop here so that final image etc. is rendered on game loss
+        if (game_over) {
+            std::cout << "\nThe word was '" << word.word << "'\n";
+            std::cout << "\nPlay again? (y/N): ";
+            if (!std::getline(std::cin, input))
+                break;
+
+            if (std::toupper(input[0]) != 'Y')
+                break;
+
+            // Reset gamestate
+            new_game = true;
+            game_over = false;
+            curr_im = 0;
+            continue;
+        }
+
         // Prompt user for a guess
         std::cout << "\n\nEnter a guess: ";
         if (!std::getline(std::cin, input))
             break;
+        std::cout << '\n';
 
         if (input.size() != 1 || !std::isalpha(input[0])) {
             feedback_msg += "Invalid input!";
@@ -156,12 +191,15 @@ int main()
 
         if (word.guess(guess)) {
             feedback_msg += "Correct!";
-            // TODO: Win condition
+            if (word.did_guess_word()) {
+                feedback_msg += "\n\nYou won!\n";
+                game_over = true;
+            }
         } else {
             feedback_msg += "Incorrect!";
             if (++curr_im >= images.size() - 1) {
-                std::cout << "\nYou lost!\n";
-                break;
+                feedback_msg += "\n\nYou lost!\n";
+                game_over = true;
             }
         }
     }
@@ -234,6 +272,23 @@ std::optional<std::vector<std::string>> parse_images(const std::string& fname)
     }
 
     return images;
+}
+
+void print_alphabet(const Gameword& word)
+{
+    for (char c = 'A'; c <= 'Z'; ++c) {
+        if (word.already_guessed(c)) {
+            std::cout << ASCII_GRAY;
+        }
+
+        std::cout << c << ASCII_RESET;
+
+        if (c != 'Z' || (c - 'A') % 10 != 0)
+            std::cout << ' ';
+
+        if (c != 'A' && (c - 'A') % 10 == 0)
+            std::cout << '\n';
+    }
 }
 
 void shuffle(std::vector<std::string>& words)

@@ -1,4 +1,4 @@
-# hangc
+# hangcc
 
 A simple hangman game for the terminal, written in C++. A reimplementation of [hangc](https://github.com/raxleys/hangc).
 
